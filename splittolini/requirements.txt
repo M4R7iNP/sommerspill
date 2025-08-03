@@ -1,0 +1,3 @@
+ocrmypdf
+pypdf
+openai
