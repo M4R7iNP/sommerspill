@@ -2,11 +2,16 @@ import { readFile } from 'node:fs/promises';
 import db from './db.js';
 import FormData from 'form-data'; // form-data v4.0.1
 import Mailgun from 'mailgun.js'; // mailgun.js v11.1.0
+import { format } from 'date-fns';
+import { nb } from 'date-fns/locale/nb';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const EVENT_ID = Number(process.env.LETSREG_EVENT_ID);
+const INSTRUMENT_LINKS_PATH = process.env.INSTRUMENT_LINKS_PATH;
 
 const INSTRUMENT_LINKS = JSON.parse(
-  await readFile('./INSTRUMENT_LINKS.json', 'utf-8'),
+  await readFile(INSTRUMENT_LINKS_PATH, 'utf-8'),
 );
 
 const mailgun = new Mailgun(FormData);
@@ -22,9 +27,12 @@ const event = await db
   .where('letsreg_id', EVENT_ID)
   .first();
 
+const DATO = new Date(event.starttid);
+const DATO_STR = format(DATO, 'd. MMMM yyyy', { locale: nb });
+
 const DIRIGENT = event?.dirigent;
 
-if (!event || !DIRIGENT) {
+if (!event || !DIRIGENT || !DATO || !DATO_STR) {
   console.error(
     `Arrangement ${EVENT_ID} not found in database or dirigent not set.`,
   );
@@ -44,7 +52,7 @@ async function sendSimpleMessageTemplate(variables, to) {
     from: 'Sommerspill i Rælingen <sommerspill@ralingenmusikklag.no>',
     to: [to],
     bcc: ['sommerspill@ralingenmusikklag.no'],
-    subject: 'Sommerspill i Rælingen',
+    subject: `Sommerspill i Rælingen ${DATO_STR}`,
     template: 'sommerspill test',
     'h:X-Mailgun-Variables': JSON.stringify(variables),
   });
@@ -63,6 +71,7 @@ for (const participant of participants) {
     dirigent: DIRIGENT,
     instrument: instrument,
     lenke: gdriveUrl,
+    dato: DATO_STR,
   };
 
   try {
@@ -79,6 +88,8 @@ for (const participant of participants) {
       error,
     );
   }
+
+  await sleep(10_000); // Sleep for to avoid hitting rate limits
 }
 
 await db.destroy();
